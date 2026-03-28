@@ -1,19 +1,22 @@
 import React, { useState, useEffect } from "react";
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 import { useFinanceStore } from "./hooks/useFinanceStore";
 import { FinanceTab } from "./components/FinanceTab";
 import { PaymentTab } from "./components/PaymentTab";
 import { ReportsTab } from "./components/ReportsTab";
+import { ArchiveTab } from "./components/ArchiveTab";
 import { Department, Person, BASE_AMOUNT } from "./types";
 import { motion, AnimatePresence } from "motion/react";
-import { Briefcase, CreditCard, BarChart2, Settings, CheckCircle2, X, FileSpreadsheet, RotateCcw, Info, Upload } from "lucide-react";
+import { Briefcase, CreditCard, BarChart2, Settings, CheckCircle2, X, FileSpreadsheet, RotateCcw, Info, Upload, Archive } from "lucide-react";
 import { Input } from "./components/ui/Input";
 import { Button } from "./components/ui/Button";
 import * as XLSX from "xlsx";
 
-type Tab = "finance" | "payment" | "reports";
+type Tab = "finance" | "payment" | "reports" | "archive";
 
 export default function App() {
-  const { state, updateCovenant, confirmPayment, resetDay, importData, stats } = useFinanceStore();
+  const { state, updateCovenant, addExpense, confirmPayment, cancelPayment, resetDay, importData, deleteArchive, clearArchives, stats } = useFinanceStore();
   const [activeTab, setActiveTab] = useState<Tab>("finance");
   
   // Modal State
@@ -25,6 +28,9 @@ export default function App() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showCovenantModal, setShowCovenantModal] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [newCovenantInput, setNewCovenantInput] = useState("");
   const [importFile, setImportFile] = useState<File | null>(null);
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: "", visible: false });
 
@@ -123,48 +129,158 @@ export default function App() {
     reader.readAsArrayBuffer(importFile);
   };
 
-  const exportToExcel = () => {
-    const data: any[] = [];
+  const exportToExcel = async () => {
+    const receivedData: any[] = [];
+    const pendingData: any[] = [];
+    const expensesData: any[] = [];
     let totalPaid = 0;
 
     state.departments.forEach(d => {
       d.persons.forEach(p => {
         const amount = p.totalAmount;
-        if (p.received) totalPaid += amount;
         
-        data.push({
-          "القسم": d.name,
-          "الرتبة": p.rank,
-          "الاسم": p.name,
-          "الرقم العسكري": p.militaryNumber,
-          "المبلغ الأساسي": p.baseAmount,
-          "الزيادة": p.bonus,
-          "الإجمالي": amount,
-          "الحالة": p.received ? "استلم" : "لم يستلم",
-          "التاريخ": p.date || "-",
-          "الوقت": p.time || "-"
-        });
+        const rowData = {
+          dept: d.name,
+          rank: p.rank,
+          name: p.name,
+          militaryNumber: p.militaryNumber,
+          baseAmount: p.baseAmount,
+          bonus: p.bonus,
+          total: amount,
+          date: p.date || "-",
+          time: p.time || "-"
+        };
+
+        if (p.received) {
+          totalPaid += amount;
+          receivedData.push(rowData);
+        } else {
+          pendingData.push(rowData);
+        }
       });
     });
 
-    data.push({});
-    data.push({ "القسم": "ملخص مالي" });
-    data.push({ "القسم": "إجمالي العهد", "الإجمالي": state.covenant });
-    data.push({ "القسم": "إجمالي المصروف", "الإجمالي": totalPaid });
-    data.push({ "القسم": "المتبقي من العهد", "الإجمالي": state.covenant - totalPaid });
+    state.expenses.forEach(e => {
+      totalPaid += e.amount;
+      expensesData.push({
+        recipient: e.recipient,
+        purpose: e.purpose,
+        amount: e.amount,
+        date: e.date,
+        time: e.time
+      });
+    });
 
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "تقرير صرف اللواء");
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'صراف اللواء';
+    workbook.created = new Date();
+
+    const createStyledSheet = (name: string, data: any[], type: 'summary' | 'persons' | 'expenses' = 'persons') => {
+      const ws = workbook.addWorksheet(name, { views: [{ rightToLeft: true }] });
+      
+      if (type === 'summary') {
+        ws.columns = [
+          { header: 'البيان', key: 'label', width: 30 },
+          { header: 'القيمة', key: 'value', width: 20 }
+        ];
+      } else if (type === 'expenses') {
+        ws.columns = [
+          { header: 'المستلم', key: 'recipient', width: 30 },
+          { header: 'الغرض', key: 'purpose', width: 40 },
+          { header: 'المبلغ', key: 'amount', width: 20 },
+          { header: 'التاريخ', key: 'date', width: 15 },
+          { header: 'الوقت', key: 'time', width: 15 },
+        ];
+      } else {
+        ws.columns = [
+          { header: 'القسم', key: 'dept', width: 20 },
+          { header: 'الرتبة', key: 'rank', width: 15 },
+          { header: 'الاسم', key: 'name', width: 30 },
+          { header: 'الرقم العسكري', key: 'militaryNumber', width: 20 },
+          { header: 'المبلغ الأساسي', key: 'baseAmount', width: 18 },
+          { header: 'الزيادة', key: 'bonus', width: 15 },
+          { header: 'الإجمالي', key: 'total', width: 18 },
+          { header: 'التاريخ', key: 'date', width: 15 },
+          { header: 'الوقت', key: 'time', width: 15 },
+        ];
+      }
+
+      // Style Header
+      const headerRow = ws.getRow(1);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12, name: 'Arial' };
+      headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } }; // Slate 800
+      headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+      headerRow.height = 30;
+
+      // Add Data
+      data.forEach((item, index) => {
+        const row = ws.addRow(item);
+        row.alignment = { vertical: 'middle', horizontal: 'center' };
+        row.font = { size: 11, name: 'Arial', bold: type === 'summary' };
+        row.height = 25;
+        
+        // Alternating row colors
+        if (index % 2 === 0) {
+          row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }; // Slate 50
+        } else {
+          row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } }; // White
+        }
+
+        // Highlight specific summary rows
+        if (type === 'summary' && item.label === 'المتبقي من العهد') {
+          row.font = { size: 12, name: 'Arial', bold: true, color: { argb: 'FF16A34A' } }; // Green
+        }
+        if (type === 'summary' && item.label === 'إجمالي المصروف') {
+          row.font = { size: 12, name: 'Arial', bold: true, color: { argb: 'FFDC2626' } }; // Red
+        }
+        
+        // Borders for all cells in row
+        row.eachCell((cell) => {
+          cell.border = {
+            top: {style:'thin', color: {argb:'FFE2E8F0'}},
+            left: {style:'thin', color: {argb:'FFE2E8F0'}},
+            bottom: {style:'thin', color: {argb:'FFE2E8F0'}},
+            right: {style:'thin', color: {argb:'FFE2E8F0'}}
+          };
+        });
+      });
+
+      // Header borders
+      headerRow.eachCell((cell) => {
+        cell.border = {
+          top: {style:'thin', color: {argb:'FF94A3B8'}},
+          left: {style:'thin', color: {argb:'FF94A3B8'}},
+          bottom: {style:'thin', color: {argb:'FF94A3B8'}},
+          right: {style:'thin', color: {argb:'FF94A3B8'}}
+        };
+      });
+    };
+
+    // 1. المستلمين (Received)
+    createStyledSheet("المستلمين", receivedData, 'persons');
+
+    // 2. غير المستلمين (Pending)
+    createStyledSheet("غير المستلمين", pendingData, 'persons');
     
-    ws["!cols"] = [
-      {wch: 15}, {wch: 12}, {wch: 20}, {wch: 15}, 
-      {wch: 15}, {wch: 10}, {wch: 15}, {wch: 12}, {wch: 12}, {wch: 10}
+    // 3. أوامر الصرف (Expenses)
+    createStyledSheet("أوامر الصرف", expensesData, 'expenses');
+
+    // 4. الملخص المالي (Summary)
+    const summaryData = [
+      { label: "إجمالي العهد", value: state.covenant },
+      { label: "إجمالي المصروف", value: totalPaid },
+      { label: "المتبقي من العهد", value: state.covenant - totalPaid },
+      { label: "إجمالي الأفراد", value: stats.totalPersons },
+      { label: "عدد المستلمين", value: stats.receivedPersons },
+      { label: "عدد المتبقين", value: stats.pendingPersons },
+      { label: "عدد أوامر الصرف", value: state.expenses.length },
     ];
+    createStyledSheet("الملخص المالي", summaryData, 'summary');
 
     const date = new Date().toLocaleDateString("ar-SA").replace(/\//g, "-");
-    XLSX.writeFile(wb, `تقرير_صرف_اللواء_${date}.xlsx`);
-    showToast("📊 تم تصدير التقرير");
+    const buffer = await workbook.xlsx.writeBuffer();
+    saveAs(new Blob([buffer]), `تقرير_صرف_اللواء_${date}.xlsx`);
+    showToast("📊 تم تصدير التقرير باحترافية");
   };
 
   return (
@@ -208,24 +324,29 @@ export default function App() {
         <AnimatePresence mode="wait">
           {activeTab === "finance" && (
             <motion.div key="finance" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-              <FinanceTab covenant={state.covenant} stats={stats} onUpdateCovenant={updateCovenant} departments={state.departments} />
+              <FinanceTab covenant={state.covenant} stats={stats} onUpdateCovenant={updateCovenant} onAddExpense={addExpense} departments={state.departments} expenses={state.expenses} />
             </motion.div>
           )}
           {activeTab === "payment" && (
             <motion.div key="payment" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-              <PaymentTab departments={state.departments} onSelectPerson={handleSelectPerson} stats={stats} onImportData={importData} />
+              <PaymentTab departments={state.departments} onSelectPerson={handleSelectPerson} stats={stats} onImportData={importData} onCancelPayment={cancelPayment} />
             </motion.div>
           )}
           {activeTab === "reports" && (
             <motion.div key="reports" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-              <ReportsTab covenant={state.covenant} stats={stats} departments={state.departments} />
+              <ReportsTab covenant={state.covenant} stats={stats} departments={state.departments} expenses={state.expenses} />
+            </motion.div>
+          )}
+          {activeTab === "archive" && (
+            <motion.div key="archive" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+              <ArchiveTab archives={state.archives || []} onDeleteArchive={deleteArchive} onClearArchives={clearArchives} />
             </motion.div>
           )}
         </AnimatePresence>
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-3 pb-safe flex justify-between items-center z-40 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 pb-safe flex justify-between items-center z-40 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
         <NavItem 
           icon={<Briefcase className="w-6 h-6" />} 
           label="المالية" 
@@ -243,6 +364,12 @@ export default function App() {
           label="التقارير" 
           active={activeTab === "reports"} 
           onClick={() => setActiveTab("reports")} 
+        />
+        <NavItem 
+          icon={<Archive className="w-6 h-6" />} 
+          label="الأرشيف" 
+          active={activeTab === "archive"} 
+          onClick={() => setActiveTab("archive")} 
         />
       </nav>
 
@@ -378,12 +505,9 @@ export default function App() {
                     تصدير التقرير الشامل
                   </Button>
                   <Button variant="outline" className="w-full justify-start h-12 font-bold" onClick={() => {
-                    const newCovenant = window.prompt("أدخل مبلغ العهد الجديد:", state.covenant.toString());
-                    if (newCovenant && !isNaN(parseInt(newCovenant))) {
-                      updateCovenant(parseInt(newCovenant));
-                      showToast("✓ تم تحديث العهد");
-                      setShowSettingsModal(false);
-                    }
+                    setNewCovenantInput(state.covenant.toString());
+                    setShowSettingsModal(false);
+                    setShowCovenantModal(true);
                   }}>
                     <Briefcase className="w-5 h-5 ml-2 text-purple-600" />
                     تعديل إجمالي العهد
@@ -396,11 +520,8 @@ export default function App() {
                     استيراد الأفراد من Excel
                   </Button>
                   <Button variant="outline" className="w-full justify-start h-12 font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50" onClick={() => {
-                    if (window.confirm("هل أنت متأكد من بدء يوم جديد؟ سيتم إعادة تعيين جميع حالات الاستلام.")) {
-                      resetDay();
-                      showToast("🌅 تم بدء يوم جديد");
-                      setShowSettingsModal(false);
-                    }
+                    setShowSettingsModal(false);
+                    setShowResetModal(true);
                   }}>
                     <RotateCcw className="w-5 h-5 ml-2" />
                     بدء يوم جديد (إعادة تعيين)
@@ -505,6 +626,114 @@ export default function App() {
                     بدء الاستيراد
                   </Button>
                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Covenant Modal */}
+      <AnimatePresence>
+        {showCovenantModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4"
+            onClick={() => setShowCovenantModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl p-6 text-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-16 h-16 bg-purple-100 rounded-full mx-auto mb-4 flex items-center justify-center text-purple-600">
+                <Briefcase className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-black text-slate-900 mb-2">تعديل العهد</h3>
+              <p className="text-slate-500 mb-6 font-semibold">أدخل مبلغ العهد الجديد بالريال اليمني</p>
+              
+              <Input
+                type="number"
+                value={newCovenantInput}
+                onChange={(e) => setNewCovenantInput(e.target.value)}
+                className="mb-6 text-center font-bold text-lg h-14 bg-slate-50 border-slate-200"
+                autoFocus
+              />
+
+              <div className="flex gap-3">
+                <Button
+                  onClick={() => setShowCovenantModal(false)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold h-12 rounded-xl"
+                >
+                  إلغاء
+                </Button>
+                <Button
+                  onClick={() => {
+                    const amount = parseInt(newCovenantInput);
+                    if (!isNaN(amount) && amount >= 0) {
+                      updateCovenant(amount);
+                      showToast("✓ تم تحديث العهد بنجاح");
+                      setShowCovenantModal(false);
+                    } else {
+                      showToast("❌ يرجى إدخال مبلغ صحيح");
+                    }
+                  }}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold h-12 rounded-xl shadow-lg shadow-purple-500/20"
+                >
+                  حفظ
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Reset Day Modal */}
+      <AnimatePresence>
+        {showResetModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4"
+            onClick={() => setShowResetModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl p-6 text-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-16 h-16 bg-rose-100 rounded-full mx-auto mb-4 flex items-center justify-center text-rose-600">
+                <RotateCcw className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-black text-slate-900 mb-2">بدء يوم جديد</h3>
+              <p className="text-slate-500 mb-6 font-semibold leading-relaxed">
+                هل أنت متأكد من بدء يوم جديد؟<br/>
+                <span className="text-rose-600 font-bold">سيتم تصفير جميع حالات الاستلام والمصروفات.</span>
+              </p>
+              
+              <div className="flex gap-3">
+                <Button
+                  onClick={() => setShowResetModal(false)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold h-12 rounded-xl"
+                >
+                  تراجع
+                </Button>
+                <Button
+                  onClick={() => {
+                    resetDay();
+                    showToast("🌅 تم بدء يوم جديد بنجاح");
+                    setShowResetModal(false);
+                  }}
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold h-12 rounded-xl shadow-lg shadow-rose-500/20"
+                >
+                  تأكيد
+                </Button>
               </div>
             </motion.div>
           </motion.div>

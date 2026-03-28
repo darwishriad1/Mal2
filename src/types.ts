@@ -17,10 +17,36 @@ export interface Department {
   persons: Person[];
 }
 
+export interface Expense {
+  id: string;
+  amount: number;
+  recipient: string;
+  purpose: string;
+  date: string;
+  time: string;
+}
+
+export interface ArchiveRecord {
+  id: string;
+  date: string;
+  covenant: number;
+  expenses: Expense[];
+  departments: Department[];
+  stats: {
+    totalSpent: number;
+    remaining: number;
+    totalPersons: number;
+    receivedPersons: number;
+    pendingPersons: number;
+  };
+}
+
 export interface SystemState {
   departments: Department[];
+  expenses: Expense[];
   covenant: number;
   lastUpdate: string;
+  archives: ArchiveRecord[];
 }
 
 export const BASE_AMOUNT = 4000;

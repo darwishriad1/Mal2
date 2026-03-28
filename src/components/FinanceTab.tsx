@@ -3,10 +3,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/Card";
 import { Input } from "./ui/Input";
 import { Button } from "./ui/Button";
 import { formatCurrency } from "../lib/utils";
-import { Briefcase, TrendingDown, CheckCircle, Users, ArrowUpRight, ArrowDownRight, Activity, Clock, Receipt, Wallet } from "lucide-react";
+import { Briefcase, TrendingDown, CheckCircle, Users, ArrowUpRight, ArrowDownRight, Activity, Clock, Receipt, Wallet, X, CheckCircle2 } from "lucide-react";
 import { Doughnut } from "react-chartjs-2";
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
-import { Department } from "../types";
+import { Department, Expense } from "../types";
+import { motion, AnimatePresence } from "motion/react";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
@@ -20,11 +21,17 @@ interface FinanceTabProps {
     receivedPersons: number;
   };
   onUpdateCovenant: (amount: number) => void;
+  onAddExpense: (amount: number, recipient: string, purpose: string) => void;
   departments: Department[];
+  expenses: Expense[];
 }
 
-export function FinanceTab({ covenant, stats, onUpdateCovenant, departments }: FinanceTabProps) {
+export function FinanceTab({ covenant, stats, onUpdateCovenant, onAddExpense, departments, expenses }: FinanceTabProps) {
   const [amountInput, setAmountInput] = useState("");
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [expenseRecipient, setExpenseRecipient] = useState("");
+  const [expensePurpose, setExpensePurpose] = useState("");
+  const [showSuccess, setShowSuccess] = useState(false);
 
   const handleDeposit = () => {
     const amount = parseInt(amountInput);
@@ -34,16 +41,36 @@ export function FinanceTab({ covenant, stats, onUpdateCovenant, departments }: F
     }
   };
 
-  const handleWithdraw = () => {
+  const handleWithdrawClick = () => {
     const amount = parseInt(amountInput);
-    if (!isNaN(amount) && amount > 0) {
-      if (amount > covenant) {
-        alert("المبلغ المطلوب سحبه أكبر من العهدة الحالية!");
-        return;
-      }
-      onUpdateCovenant(covenant - amount);
-      setAmountInput("");
+    if (isNaN(amount) || amount <= 0) {
+      alert("الرجاء إدخال مبلغ صحيح للصرف");
+      return;
     }
+    if (amount > stats.remaining) {
+      alert("المبلغ المطلوب صرفه أكبر من المتبقي من العهدة!");
+      return;
+    }
+    setShowExpenseModal(true);
+  };
+
+  const handleConfirmExpense = () => {
+    const amount = parseInt(amountInput);
+    if (!expenseRecipient.trim() || !expensePurpose.trim()) {
+      alert("الرجاء إدخال المستلم والغرض");
+      return;
+    }
+    
+    onAddExpense(amount, expenseRecipient, expensePurpose);
+    setAmountInput("");
+    setExpenseRecipient("");
+    setExpensePurpose("");
+    setShowExpenseModal(false);
+    
+    setShowSuccess(true);
+    setTimeout(() => {
+      setShowSuccess(false);
+    }, 2000);
   };
 
   const chartData = {
@@ -57,9 +84,34 @@ export function FinanceTab({ covenant, stats, onUpdateCovenant, departments }: F
     ],
   };
 
-  // Get recent transactions (just taking the last few who received)
-  const recentTransactions = departments
-    .flatMap(d => d.persons.filter(p => p.received).map(p => ({ ...p, deptName: d.name })))
+  // Get recent transactions (combining persons and expenses)
+  const recentPersonTxs = departments
+    .flatMap(d => d.persons.filter(p => p.received).map(p => ({ 
+      id: p.id,
+      name: p.name, 
+      deptName: d.name, 
+      time: p.time, 
+      date: p.date,
+      totalAmount: p.totalAmount,
+      type: 'person'
+    })));
+    
+  const recentExpenseTxs = expenses.map(e => ({
+    id: e.id,
+    name: e.recipient,
+    deptName: e.purpose,
+    time: e.time,
+    date: e.date,
+    totalAmount: e.amount,
+    type: 'expense'
+  }));
+
+  const recentTransactions = [...recentPersonTxs, ...recentExpenseTxs]
+    .sort((a, b) => {
+      // Simple sort by assuming later added are at the end, or we can just reverse the combined array if we assume chronological addition
+      // Since we don't have full timestamps, we'll just reverse the concatenated array for simplicity, or sort by id if they contain timestamps
+      return 0; // We will just reverse the whole array below
+    })
     .reverse()
     .slice(0, 5);
 
@@ -106,11 +158,11 @@ export function FinanceTab({ covenant, stats, onUpdateCovenant, departments }: F
                   إيداع
                 </Button>
                 <Button
-                  onClick={handleWithdraw}
+                  onClick={handleWithdrawClick}
                   className="bg-rose-500 hover:bg-rose-600 text-white h-12 px-4 flex items-center gap-1"
                 >
                   <ArrowDownRight className="w-4 h-4" />
-                  سحب
+                  صرف
                 </Button>
               </div>
             </div>
@@ -196,8 +248,8 @@ export function FinanceTab({ covenant, stats, onUpdateCovenant, departments }: F
               {recentTransactions.map((tx, idx) => (
                 <div key={idx} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
-                      <CheckCircle className="w-5 h-5" />
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${tx.type === 'expense' ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                      {tx.type === 'expense' ? <ArrowDownRight className="w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
                     </div>
                     <div>
                       <p className="text-sm font-bold text-slate-800">{tx.name}</p>
@@ -205,7 +257,7 @@ export function FinanceTab({ covenant, stats, onUpdateCovenant, departments }: F
                     </div>
                   </div>
                   <div className="text-left">
-                    <p className="text-sm font-black text-emerald-600">-{tx.totalAmount.toLocaleString()}</p>
+                    <p className={`text-sm font-black ${tx.type === 'expense' ? 'text-rose-600' : 'text-emerald-600'}`}>-{tx.totalAmount.toLocaleString()}</p>
                     <p className="text-xs text-slate-400">ر.ي</p>
                   </div>
                 </div>
@@ -218,6 +270,93 @@ export function FinanceTab({ covenant, stats, onUpdateCovenant, departments }: F
           )}
         </CardContent>
       </Card>
+
+      {/* Expense Modal */}
+      <AnimatePresence>
+        {showExpenseModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowExpenseModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-6 text-center border-b border-slate-100 relative">
+                <button 
+                  onClick={() => setShowExpenseModal(false)}
+                  className="absolute left-4 top-4 w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-200"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <div className="w-16 h-16 bg-rose-50 rounded-2xl mx-auto mb-4 flex items-center justify-center text-rose-600">
+                  <ArrowDownRight className="w-8 h-8" />
+                </div>
+                <h2 className="text-xl font-black text-slate-900">توجيهات الصرف</h2>
+                <p className="text-sm font-bold text-rose-600 mt-1">المبلغ: {parseInt(amountInput).toLocaleString()} ر.ي</p>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">المستلم</label>
+                  <Input
+                    placeholder="اسم المستلم..."
+                    value={expenseRecipient}
+                    onChange={(e) => setExpenseRecipient(e.target.value)}
+                    className="bg-slate-50 border-slate-200"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">الغرض</label>
+                  <Input
+                    placeholder="غرض الصرف..."
+                    value={expensePurpose}
+                    onChange={(e) => setExpensePurpose(e.target.value)}
+                    className="bg-slate-50 border-slate-200"
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <Button 
+                    onClick={handleConfirmExpense} 
+                    className="w-full h-14 rounded-2xl bg-rose-500 hover:bg-rose-600 text-white text-base font-bold shadow-lg shadow-rose-500/20"
+                  >
+                    تأكيد الصرف
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Success Overlay */}
+      <AnimatePresence>
+        {showSuccess && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-emerald-500 z-[60] flex flex-col items-center justify-center text-white"
+          >
+            <motion.div
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", bounce: 0.5 }}
+              className="w-32 h-32 bg-white/20 rounded-full flex items-center justify-center mb-6"
+            >
+              <CheckCircle2 className="w-16 h-16" />
+            </motion.div>
+            <h2 className="text-3xl font-black mb-2">تم الصرف بنجاح!</h2>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

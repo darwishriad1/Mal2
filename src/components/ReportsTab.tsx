@@ -1,9 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/Card";
-import { Department, BASE_AMOUNT } from "../types";
+import { Department, Expense, BASE_AMOUNT } from "../types";
 import { formatCurrency } from "../lib/utils";
 import { FileSpreadsheet, Clock, BarChart3, Users, DollarSign, Building2, Download, Printer } from "lucide-react";
 import { Button } from "./ui/Button";
-import * as XLSX from "xlsx";
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 import { useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
 import { PrintReport } from "./PrintReport";
@@ -19,9 +20,10 @@ interface ReportsTabProps {
     pendingPersons: number;
   };
   departments: Department[];
+  expenses: Expense[];
 }
 
-export function ReportsTab({ covenant, stats, departments }: ReportsTabProps) {
+export function ReportsTab({ covenant, stats, departments, expenses }: ReportsTabProps) {
   const percentage = covenant > 0 ? Math.round((stats.totalSpent / covenant) * 100) : 0;
   const average = stats.receivedPersons > 0 ? Math.round(stats.totalSpent / stats.receivedPersons) : 0;
   const [isDownloading, setIsDownloading] = useState(false);
@@ -41,8 +43,22 @@ export function ReportsTab({ covenant, stats, departments }: ReportsTabProps) {
           amount: p.totalAmount,
           date: p.date,
           time: p.time,
+          type: 'person'
         });
       }
+    });
+  });
+
+  expenses.forEach(e => {
+    if (e.amount > maxAmount) maxAmount = e.amount;
+    if (e.amount < minAmount) minAmount = e.amount;
+    transactions.push({
+      name: e.recipient,
+      rank: 'أمر صرف',
+      amount: e.amount,
+      date: e.date,
+      time: e.time,
+      type: 'expense'
     });
   });
 
@@ -67,30 +83,40 @@ export function ReportsTab({ covenant, stats, departments }: ReportsTabProps) {
     if (!printRef.current) return;
     setIsDownloading(true);
     try {
+      const container = document.getElementById('pdf-container');
+      if (container) {
+        container.classList.remove('hidden');
+        container.style.position = 'fixed';
+        container.style.top = '0';
+        container.style.left = '0';
+        container.style.width = '210mm';
+        container.style.zIndex = '-9999';
+        container.style.backgroundColor = 'white';
+      }
+
       const element = printRef.current;
       const date = new Date().toLocaleDateString("ar-SA").replace(/\//g, "-");
-      
-      // Temporarily make it visible for html2pdf to capture correctly
-      const originalDisplay = element.style.display;
-      element.style.display = 'block';
-      element.style.position = 'absolute';
-      element.style.top = '-9999px';
       
       const opt = {
         margin:       10,
         filename:     `التقرير_المالي_العام_${date}.pdf`,
-        image:        { type: 'jpeg', quality: 0.98 },
+        image:        { type: 'jpeg' as const, quality: 0.98 },
         html2canvas:  { scale: 2, useCORS: true, logging: false },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        jsPDF:        { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const },
         pagebreak:    { mode: ['css', 'legacy'] }
       };
 
       await html2pdf().set(opt).from(element).save();
-      
-      // Restore original styles
-      element.style.display = originalDisplay;
-      element.style.position = '';
-      element.style.top = '';
+
+      if (container) {
+        container.classList.add('hidden');
+        container.style.position = '';
+        container.style.top = '';
+        container.style.left = '';
+        container.style.width = '';
+        container.style.zIndex = '';
+        container.style.backgroundColor = '';
+      }
     } catch (error) {
       console.error("Error generating PDF:", error);
     } finally {
@@ -98,7 +124,7 @@ export function ReportsTab({ covenant, stats, departments }: ReportsTabProps) {
     }
   };
 
-  const exportDepartmentsToExcel = () => {
+  const exportDepartmentsToExcel = async () => {
     const data = departments.map(dept => {
       const total = dept.persons.length;
       const received = dept.persons.filter(p => p.received).length;
@@ -106,29 +132,77 @@ export function ReportsTab({ covenant, stats, departments }: ReportsTabProps) {
       const percent = total > 0 ? Math.round((received / total) * 100) : 0;
 
       return {
-        "القسم": dept.name,
-        "إجمالي الأفراد": total,
-        "تم الصرف لهم": received,
-        "المتبقي": remaining,
-        "نسبة الصرف": `${percent}%`
+        dept: dept.name,
+        total: total,
+        received: received,
+        remaining: remaining,
+        percent: `${percent}%`
       };
     });
 
-    const ws = XLSX.utils.json_to_sheet(data);
-    
-    // Set RTL direction for the worksheet
-    if (!ws['!views']) ws['!views'] = [];
-    ws['!views'].push({ rightToLeft: true });
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'صراف اللواء';
+    workbook.created = new Date();
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "تقرير الأقسام");
+    const ws = workbook.addWorksheet("تقرير الأقسام", { views: [{ rightToLeft: true }] });
     
-    ws["!cols"] = [
-      {wch: 20}, {wch: 15}, {wch: 15}, {wch: 15}, {wch: 15}
+    ws.columns = [
+      { header: 'القسم', key: 'dept', width: 25 },
+      { header: 'إجمالي الأفراد', key: 'total', width: 20 },
+      { header: 'تم الصرف لهم', key: 'received', width: 20 },
+      { header: 'المتبقي', key: 'remaining', width: 20 },
+      { header: 'نسبة الصرف', key: 'percent', width: 15 }
     ];
 
+    // Style Header
+    const headerRow = ws.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12, name: 'Arial' };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } }; // Indigo 600
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    headerRow.height = 30;
+
+    // Add Data
+    data.forEach((item, index) => {
+      const row = ws.addRow(item);
+      row.alignment = { vertical: 'middle', horizontal: 'center' };
+      row.font = { size: 11, name: 'Arial', bold: true };
+      row.height = 25;
+      
+      // Alternating row colors
+      if (index % 2 === 0) {
+        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }; // Slate 50
+      } else {
+        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } }; // White
+      }
+
+      // Highlight specific columns
+      row.getCell('received').font = { size: 11, name: 'Arial', bold: true, color: { argb: 'FF16A34A' } }; // Green
+      row.getCell('remaining').font = { size: 11, name: 'Arial', bold: true, color: { argb: 'FFDC2626' } }; // Red
+      
+      // Borders for all cells in row
+      row.eachCell((cell) => {
+        cell.border = {
+          top: {style:'thin', color: {argb:'FFE2E8F0'}},
+          left: {style:'thin', color: {argb:'FFE2E8F0'}},
+          bottom: {style:'thin', color: {argb:'FFE2E8F0'}},
+          right: {style:'thin', color: {argb:'FFE2E8F0'}}
+        };
+      });
+    });
+
+    // Header borders
+    headerRow.eachCell((cell) => {
+      cell.border = {
+        top: {style:'thin', color: {argb:'FFC7D2FE'}},
+        left: {style:'thin', color: {argb:'FFC7D2FE'}},
+        bottom: {style:'thin', color: {argb:'FFC7D2FE'}},
+        right: {style:'thin', color: {argb:'FFC7D2FE'}}
+      };
+    });
+
     const date = new Date().toLocaleDateString("ar-SA").replace(/\//g, "-");
-    XLSX.writeFile(wb, `تقرير_الأقسام_${date}.xlsx`);
+    const buffer = await workbook.xlsx.writeBuffer();
+    saveAs(new Blob([buffer]), `تقرير_الأقسام_${date}.xlsx`);
   };
 
   return (
@@ -257,7 +331,7 @@ export function ReportsTab({ covenant, stats, departments }: ReportsTabProps) {
             <div className="space-y-3">
               {recentTransactions.map((t, i) => (
                 <div key={i} className="flex items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center ml-3 shrink-0">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ml-3 shrink-0 ${t.type === 'expense' ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
                     <DollarSign className="w-6 h-6" />
                   </div>
                   <div className="flex-1">
@@ -268,7 +342,7 @@ export function ReportsTab({ covenant, stats, departments }: ReportsTabProps) {
                       {t.date} • {t.time}
                     </div>
                   </div>
-                  <div className="font-black text-emerald-600 text-lg">
+                  <div className={`font-black text-lg ${t.type === 'expense' ? 'text-rose-600' : 'text-emerald-600'}`}>
                     {t.amount.toLocaleString()} ر.ي
                   </div>
                 </div>
@@ -279,12 +353,13 @@ export function ReportsTab({ covenant, stats, departments }: ReportsTabProps) {
       </Card>
 
       {/* Hidden Print Component */}
-      <div className="hidden">
+      <div id="pdf-container" className="hidden">
         <PrintReport 
           ref={printRef} 
           covenant={covenant} 
           stats={stats} 
           departments={departments} 
+          expenses={expenses}
         />
       </div>
     </div>

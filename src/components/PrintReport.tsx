@@ -1,5 +1,5 @@
 import React from 'react';
-import { Department } from '../types';
+import { Department, Expense } from '../types';
 
 interface PrintReportProps {
   covenant: number;
@@ -11,19 +11,32 @@ interface PrintReportProps {
     pendingPersons: number;
   };
   departments: Department[];
+  expenses: Expense[];
 }
 
 export const PrintReport = React.forwardRef<HTMLDivElement, PrintReportProps>(
-  ({ covenant, stats, departments }, ref) => {
+  ({ covenant, stats, departments, expenses }, ref) => {
     const today = new Date().toLocaleDateString('ar-SA');
 
     return (
       <div ref={ref} className="p-8 print-safe-colors" dir="rtl" style={{ fontFamily: 'Arial, sans-serif', backgroundColor: '#ffffff', color: '#000000' }}>
         {/* Page 1: General Financial Report */}
         <div className="page-break-after-always html2pdf__page-break min-h-[297mm] flex flex-col">
-          <div className="text-center mb-10 border-b-4 pb-6" style={{ borderColor: '#1f2937' }}>
-            <h1 className="text-4xl font-black mb-3">التقرير المالي العام</h1>
-            <p className="text-xl font-bold" style={{ color: '#4b5563' }}>تاريخ التقرير: {today}</p>
+          <div className="flex justify-between items-start mb-10 border-b-4 pb-6" style={{ borderColor: '#000000' }}>
+            <div className="text-right">
+              <h3 className="font-bold text-lg">الجمهورية اليمنية</h3>
+              <h3 className="font-bold text-lg">وزارة الدفاع</h3>
+              <h3 className="font-bold text-lg">الشؤون المالية</h3>
+            </div>
+            <div className="text-center">
+              <h1 className="text-3xl font-black mb-2 underline decoration-double underline-offset-8">التقرير المالي العام</h1>
+              <p className="text-lg font-bold mt-4" style={{ color: '#4b5563' }}>تاريخ التقرير: {today}</p>
+            </div>
+            <div className="text-left opacity-0">
+              <h3 className="font-bold text-lg">الجمهورية اليمنية</h3>
+              <h3 className="font-bold text-lg">وزارة الدفاع</h3>
+              <h3 className="font-bold text-lg">الشؤون المالية</h3>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-8 mb-12">
@@ -125,37 +138,42 @@ export const PrintReport = React.forwardRef<HTMLDivElement, PrintReportProps>(
 
           return (
             <div key={dept.id} className="page-break-before-always html2pdf__page-break min-h-[297mm] pt-8">
-              <div className="text-center mb-8 border-b-2 pb-4" style={{ borderColor: '#1f2937' }}>
-                <h2 className="text-3xl font-black mb-2">كشف صرف قسم: {dept.name}</h2>
-                <p className="text-lg" style={{ color: '#4b5563' }}>عدد الأفراد المصروف لهم: {receivedPersons.length}</p>
+              <div className="flex justify-between items-start mb-8 border-b-2 pb-4" style={{ borderColor: '#000000' }}>
+                <div className="text-right">
+                  <h3 className="font-bold text-lg">الجمهورية اليمنية</h3>
+                  <h3 className="font-bold text-lg">وزارة الدفاع</h3>
+                  <h3 className="font-bold text-lg">الشؤون المالية</h3>
+                </div>
+                <div className="text-center">
+                  <h2 className="text-2xl font-black mb-2 underline decoration-double underline-offset-8">كشف تسليم المستحقات المالية</h2>
+                  <h3 className="text-xl font-bold mt-3">القسم: {dept.name}</h3>
+                </div>
+                <div className="text-left">
+                  <h3 className="font-bold text-lg">التاريخ: {today}</h3>
+                  <h3 className="font-bold text-lg mt-1">عدد الأفراد: {receivedPersons.length}</h3>
+                </div>
               </div>
 
-              <table className="w-full text-right border-collapse text-sm">
+              <table className="w-full text-right border-collapse text-base" style={{ borderColor: '#000000' }}>
                 <thead>
-                  <tr style={{ backgroundColor: '#f3f4f6' }}>
-                    <th className="border p-3 font-bold w-12 text-center" style={{ borderColor: '#d1d5db' }}>م</th>
-                    <th className="border p-3 font-bold" style={{ borderColor: '#d1d5db' }}>الرقم العسكري</th>
-                    <th className="border p-3 font-bold" style={{ borderColor: '#d1d5db' }}>الرتبة</th>
-                    <th className="border p-3 font-bold" style={{ borderColor: '#d1d5db' }}>الاسم</th>
-                    <th className="border p-3 font-bold" style={{ borderColor: '#d1d5db' }}>المبلغ الأساسي</th>
-                    <th className="border p-3 font-bold" style={{ borderColor: '#d1d5db' }}>الزيادة</th>
-                    <th className="border p-3 font-bold" style={{ borderColor: '#d1d5db' }}>الإجمالي</th>
-                    <th className="border p-3 font-bold" style={{ borderColor: '#d1d5db' }}>التاريخ والوقت</th>
-                    <th className="border p-3 font-bold w-32" style={{ borderColor: '#d1d5db' }}>التوقيع</th>
+                  <tr style={{ backgroundColor: '#e5e7eb' }}>
+                    <th className="border-2 p-3 font-bold w-12 text-center" style={{ borderColor: '#000000' }}>م</th>
+                    <th className="border-2 p-3 font-bold w-32 text-center" style={{ borderColor: '#000000' }}>الرقم العسكري</th>
+                    <th className="border-2 p-3 font-bold w-24 text-center" style={{ borderColor: '#000000' }}>الرتبة</th>
+                    <th className="border-2 p-3 font-bold" style={{ borderColor: '#000000' }}>الاسم الرباعي</th>
+                    <th className="border-2 p-3 font-bold w-40 text-center" style={{ borderColor: '#000000' }}>تاريخ ووقت الاستلام</th>
+                    <th className="border-2 p-3 font-bold w-48 text-center" style={{ borderColor: '#000000' }}>التوقيع / البصمة</th>
                   </tr>
                 </thead>
                 <tbody>
                   {receivedPersons.map((person, idx) => (
-                    <tr key={person.id} className="break-inside-avoid border-b" style={{ borderColor: '#e5e7eb' }}>
-                      <td className="border-x p-3 text-center" style={{ borderColor: '#e5e7eb' }}>{idx + 1}</td>
-                      <td className="border-x p-3" style={{ borderColor: '#e5e7eb' }}>{person.militaryNumber}</td>
-                      <td className="border-x p-3" style={{ borderColor: '#e5e7eb' }}>{person.rank}</td>
-                      <td className="border-x p-3 font-bold" style={{ borderColor: '#e5e7eb' }}>{person.name}</td>
-                      <td className="border-x p-3" style={{ borderColor: '#e5e7eb' }}>{person.baseAmount.toLocaleString()}</td>
-                      <td className="border-x p-3" style={{ borderColor: '#e5e7eb' }}>{person.bonus.toLocaleString()}</td>
-                      <td className="border-x p-3 font-bold" style={{ color: '#15803d', borderColor: '#e5e7eb' }}>{person.totalAmount.toLocaleString()}</td>
-                      <td className="border-x p-3 text-xs" dir="ltr" style={{ color: '#4b5563', borderColor: '#e5e7eb' }}>{person.date} {person.time}</td>
-                      <td className="border-x p-3" style={{ borderColor: '#e5e7eb' }}></td>
+                    <tr key={person.id} className="break-inside-avoid">
+                      <td className="border-2 p-4 text-center font-bold" style={{ borderColor: '#000000' }}>{idx + 1}</td>
+                      <td className="border-2 p-4 text-center font-semibold" style={{ borderColor: '#000000' }}>{person.militaryNumber}</td>
+                      <td className="border-2 p-4 text-center font-semibold" style={{ borderColor: '#000000' }}>{person.rank}</td>
+                      <td className="border-2 p-4 font-bold text-lg" style={{ borderColor: '#000000' }}>{person.name}</td>
+                      <td className="border-2 p-4 text-center text-sm font-semibold" dir="ltr" style={{ borderColor: '#000000' }}>{person.date}<br/>{person.time}</td>
+                      <td className="border-2 p-4" style={{ borderColor: '#000000' }}></td>
                     </tr>
                   ))}
                 </tbody>
@@ -164,28 +182,85 @@ export const PrintReport = React.forwardRef<HTMLDivElement, PrintReportProps>(
               <div className="mt-16 grid grid-cols-3 gap-8 text-center font-bold text-lg break-inside-avoid">
                 <div>
                   <p className="mb-12">المسؤول المالي</p>
-                  <p className="border-t pt-2 w-3/4 mx-auto" style={{ borderColor: '#9ca3af' }}>الاسم والتوقيع</p>
+                  <p className="border-t-2 pt-2 w-3/4 mx-auto" style={{ borderColor: '#000000' }}>الاسم والتوقيع</p>
                 </div>
                 <div>
                   <p className="mb-12">المراجعة والتدقيق</p>
-                  <p className="border-t pt-2 w-3/4 mx-auto" style={{ borderColor: '#9ca3af' }}>الاسم والتوقيع</p>
+                  <p className="border-t-2 pt-2 w-3/4 mx-auto" style={{ borderColor: '#000000' }}>الاسم والتوقيع</p>
                 </div>
                 <div>
                   <p className="mb-12">الاعتماد</p>
-                  <p className="border-t pt-2 w-3/4 mx-auto" style={{ borderColor: '#9ca3af' }}>الاسم والتوقيع</p>
+                  <p className="border-t-2 pt-2 w-3/4 mx-auto" style={{ borderColor: '#000000' }}>الاسم والتوقيع</p>
                 </div>
               </div>
             </div>
           );
         })}
 
+        {/* Expenses details */}
+        {expenses && expenses.length > 0 && (
+          <div className="page-break-before-always html2pdf__page-break min-h-[297mm] pt-8">
+            <div className="flex justify-between items-start mb-8 border-b-2 pb-4" style={{ borderColor: '#000000' }}>
+              <div className="text-right">
+                <h3 className="font-bold text-lg">الجمهورية اليمنية</h3>
+                <h3 className="font-bold text-lg">وزارة الدفاع</h3>
+                <h3 className="font-bold text-lg">الشؤون المالية</h3>
+              </div>
+              <div className="text-center">
+                <h2 className="text-2xl font-black mb-2 underline decoration-double underline-offset-8">كشف أوامر الصرف المستقلة</h2>
+              </div>
+              <div className="text-left">
+                <h3 className="font-bold text-lg">التاريخ: {today}</h3>
+                <h3 className="font-bold text-lg mt-1">العدد: {expenses.length}</h3>
+              </div>
+            </div>
+
+            <table className="w-full text-right border-collapse text-base" style={{ borderColor: '#000000' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#e5e7eb' }}>
+                  <th className="border-2 p-3 font-bold w-12 text-center" style={{ borderColor: '#000000' }}>م</th>
+                  <th className="border-2 p-3 font-bold w-48" style={{ borderColor: '#000000' }}>المستلم</th>
+                  <th className="border-2 p-3 font-bold" style={{ borderColor: '#000000' }}>الغرض</th>
+                  <th className="border-2 p-3 font-bold w-32 text-center" style={{ borderColor: '#000000' }}>المبلغ</th>
+                  <th className="border-2 p-3 font-bold w-40 text-center" style={{ borderColor: '#000000' }}>التاريخ والوقت</th>
+                  <th className="border-2 p-3 font-bold w-48 text-center" style={{ borderColor: '#000000' }}>التوقيع / البصمة</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenses.map((expense, idx) => (
+                  <tr key={expense.id} className="break-inside-avoid">
+                    <td className="border-2 p-4 text-center font-bold" style={{ borderColor: '#000000' }}>{idx + 1}</td>
+                    <td className="border-2 p-4 font-bold text-lg" style={{ borderColor: '#000000' }}>{expense.recipient}</td>
+                    <td className="border-2 p-4 font-semibold" style={{ borderColor: '#000000' }}>{expense.purpose}</td>
+                    <td className="border-2 p-4 font-bold text-center" style={{ borderColor: '#000000' }}>{expense.amount.toLocaleString()}</td>
+                    <td className="border-2 p-4 text-center text-sm font-semibold" dir="ltr" style={{ borderColor: '#000000' }}>{expense.date}<br/>{expense.time}</td>
+                    <td className="border-2 p-4" style={{ borderColor: '#000000' }}></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div className="mt-16 grid grid-cols-3 gap-8 text-center font-bold text-lg break-inside-avoid">
+              <div>
+                <p className="mb-12">المسؤول المالي</p>
+                <p className="border-t-2 pt-2 w-3/4 mx-auto" style={{ borderColor: '#000000' }}>الاسم والتوقيع</p>
+              </div>
+              <div>
+                <p className="mb-12">المراجعة والتدقيق</p>
+                <p className="border-t-2 pt-2 w-3/4 mx-auto" style={{ borderColor: '#000000' }}>الاسم والتوقيع</p>
+              </div>
+              <div>
+                <p className="mb-12">الاعتماد</p>
+                <p className="border-t-2 pt-2 w-3/4 mx-auto" style={{ borderColor: '#000000' }}>الاسم والتوقيع</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <style>
           {`
             /* Force all elements in the print container to have safe computed colors */
-            .print-safe-colors, .print-safe-colors * {
-              border-color: #e5e7eb;
-              outline-color: #e5e7eb;
-              text-decoration-color: #000000;
+            .print-safe-colors {
               box-shadow: none !important;
               text-shadow: none !important;
             }

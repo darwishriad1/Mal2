@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Department, Person, SystemState, BASE_AMOUNT } from '../types';
+import { Department, Person, SystemState, Expense, ArchiveRecord, BASE_AMOUNT } from '../types';
 
 const STORAGE_KEY = 'militaryPaymentSystem_v2';
 
@@ -26,8 +26,10 @@ function createDefaultData(): SystemState {
   
   return {
     departments,
+    expenses: [],
     covenant: 320000, // Default covenant: 20 persons * 4 depts * 4000
-    lastUpdate: new Date().toISOString()
+    lastUpdate: new Date().toISOString(),
+    archives: []
   };
 }
 
@@ -51,7 +53,9 @@ export function useFinanceStore() {
 
         return {
           ...parsedState,
-          departments: migratedDepartments
+          departments: migratedDepartments,
+          expenses: parsedState.expenses || [],
+          archives: parsedState.archives || []
         };
       } catch (e) {
         console.error("Failed to parse saved state", e);
@@ -67,6 +71,25 @@ export function useFinanceStore() {
 
   const updateCovenant = useCallback((amount: number) => {
     setState(prev => ({ ...prev, covenant: amount, lastUpdate: new Date().toISOString() }));
+  }, []);
+
+  const addExpense = useCallback((amount: number, recipient: string, purpose: string) => {
+    setState(prev => {
+      const now = new Date();
+      const newExpense: Expense = {
+        id: `exp-${Date.now()}`,
+        amount,
+        recipient,
+        purpose,
+        date: now.toLocaleDateString('ar-SA'),
+        time: now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
+      };
+      return {
+        ...prev,
+        expenses: [...prev.expenses, newExpense],
+        lastUpdate: now.toISOString()
+      };
+    });
   }, []);
 
   const confirmPayment = useCallback((deptId: number, personId: string, bonus: number) => {
@@ -94,22 +117,92 @@ export function useFinanceStore() {
     });
   }, []);
 
-  const resetDay = useCallback(() => {
+  const cancelPayment = useCallback((deptId: number, personId: string) => {
+    setState(prev => {
+      const now = new Date();
+      const newDepts = prev.departments.map(dept => {
+        if (dept.id !== deptId) return dept;
+        return {
+          ...dept,
+          persons: dept.persons.map(p => {
+            if (p.id !== personId) return p;
+            return {
+              ...p,
+              received: false,
+              date: null,
+              time: null,
+              bonus: 0,
+              totalAmount: p.baseAmount
+            };
+          })
+        };
+      });
+      return { ...prev, departments: newDepts, lastUpdate: now.toISOString() };
+    });
+  }, []);
+
+  const deleteArchive = useCallback((id: string) => {
     setState(prev => ({
       ...prev,
-      departments: prev.departments.map(dept => ({
-        ...dept,
-        persons: dept.persons.map(p => ({
-          ...p,
-          received: false,
-          date: null,
-          time: null,
-          bonus: 0,
-          totalAmount: p.baseAmount
-        }))
-      })),
+      archives: (prev.archives || []).filter(a => a.id !== id),
       lastUpdate: new Date().toISOString()
     }));
+  }, []);
+
+  const clearArchives = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      archives: [],
+      lastUpdate: new Date().toISOString()
+    }));
+  }, []);
+
+  const resetDay = useCallback(() => {
+    setState(prev => {
+      // Calculate stats for the archive
+      const totalSpentPersons = prev.departments.reduce((sum, d) => 
+        sum + d.persons.filter(p => p.received).reduce((s, p) => s + p.totalAmount, 0), 0);
+      const totalSpentExpenses = prev.expenses.reduce((sum, exp) => sum + exp.amount, 0);
+      const totalSpent = totalSpentPersons + totalSpentExpenses;
+      const remaining = prev.covenant - totalSpent;
+      const totalPersons = prev.departments.reduce((sum, d) => sum + d.persons.length, 0);
+      const receivedPersons = prev.departments.reduce((sum, d) => sum + d.persons.filter(p => p.received).length, 0);
+      const pendingPersons = totalPersons - receivedPersons;
+
+      const archiveRecord: ArchiveRecord = {
+        id: `arch-${Date.now()}`,
+        date: new Date().toLocaleDateString('ar-SA'),
+        covenant: prev.covenant,
+        expenses: [...prev.expenses],
+        departments: JSON.parse(JSON.stringify(prev.departments)), // Deep copy to preserve state
+        stats: {
+          totalSpent,
+          remaining,
+          totalPersons,
+          receivedPersons,
+          pendingPersons
+        }
+      };
+
+      return {
+        ...prev,
+        covenant: remaining,
+        departments: prev.departments.map(dept => ({
+          ...dept,
+          persons: dept.persons.map(p => ({
+            ...p,
+            received: false,
+            date: null,
+            time: null,
+            bonus: 0,
+            totalAmount: p.baseAmount
+          }))
+        })),
+        expenses: [],
+        archives: [archiveRecord, ...(prev.archives || [])],
+        lastUpdate: new Date().toISOString()
+      };
+    });
   }, []);
 
   const importData = useCallback((importedData: any[]) => {
@@ -186,8 +279,12 @@ export function useFinanceStore() {
   }, []);
 
   // Derived state
-  const totalSpent = state.departments.reduce((sum, d) => 
+  const totalSpentPersons = state.departments.reduce((sum, d) => 
     sum + d.persons.filter(p => p.received).reduce((s, p) => s + p.totalAmount, 0), 0);
+  
+  const totalSpentExpenses = state.expenses.reduce((sum, exp) => sum + exp.amount, 0);
+
+  const totalSpent = totalSpentPersons + totalSpentExpenses;
   
   const remaining = state.covenant - totalSpent;
   
@@ -198,7 +295,11 @@ export function useFinanceStore() {
   return {
     state,
     updateCovenant,
+    addExpense,
     confirmPayment,
+    cancelPayment,
+    deleteArchive,
+    clearArchives,
     resetDay,
     importData,
     stats: {

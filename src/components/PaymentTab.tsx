@@ -16,15 +16,17 @@ interface PaymentTabProps {
     receivedPersons: number;
   };
   onImportData?: (data: any[]) => void;
+  onCancelPayment?: (deptId: number, personId: string) => void;
 }
 
 type FilterType = "all" | "pending" | "received";
 
-export function PaymentTab({ departments, onSelectPerson, stats, onImportData }: PaymentTabProps) {
+export function PaymentTab({ departments, onSelectPerson, stats, onImportData, onCancelPayment }: PaymentTabProps) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>("all");
   const [deptFilter, setDeptFilter] = useState<number | "all">("all");
   const [collapsedDepts, setCollapsedDepts] = useState<Record<number, boolean>>({});
+  const [personToCancel, setPersonToCancel] = useState<{deptId: number, person: Person} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const toggleDept = (deptId: number) => {
@@ -197,6 +199,7 @@ export function PaymentTab({ departments, onSelectPerson, stats, onImportData }:
                             key={person.id}
                             person={person}
                             onClick={() => onSelectPerson(dept.id, person.id)}
+                            onCancel={() => setPersonToCancel({ deptId: dept.id, person })}
                           />
                         ))}
                       </div>
@@ -208,6 +211,54 @@ export function PaymentTab({ departments, onSelectPerson, stats, onImportData }:
           )}
         </AnimatePresence>
       </div>
+
+      {/* Cancel Confirmation Modal */}
+      <AnimatePresence>
+        {personToCancel && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4"
+            onClick={() => setPersonToCancel(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl p-6 text-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-16 h-16 bg-rose-100 rounded-full mx-auto mb-4 flex items-center justify-center text-rose-600">
+                <X className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-black text-slate-900 mb-2">إلغاء الصرف</h3>
+              <p className="text-slate-500 mb-6 font-semibold">
+                هل أنت متأكد من إلغاء الصرف للفرد <span className="text-slate-800 font-bold">{personToCancel.person.name}</span>؟
+              </p>
+              <div className="flex gap-3">
+                <Button
+                  onClick={() => setPersonToCancel(null)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold h-12 rounded-xl"
+                >
+                  تراجع
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (onCancelPayment) {
+                      onCancelPayment(personToCancel.deptId, personToCancel.person.id);
+                    }
+                    setPersonToCancel(null);
+                  }}
+                  className="flex-1 bg-rose-500 hover:bg-rose-600 text-white font-bold h-12 rounded-xl shadow-lg shadow-rose-500/20"
+                >
+                  نعم، إلغاء
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -290,13 +341,13 @@ function DepartmentHeader({ dept, isCollapsed, onToggle }: { dept: Department, i
   );
 }
 
-function CompactPersonCard({ person, onClick }: { person: Person; onClick: () => void; key?: React.Key }) {
+function CompactPersonCard({ person, onClick, onCancel }: { person: Person; onClick: () => void; onCancel?: () => void; key?: React.Key }) {
   return (
     <motion.div
       onClick={onClick}
       whileTap={{ scale: 0.98 }}
       className={cn(
-        "bg-white rounded-xl p-3 cursor-pointer border flex items-center gap-3 transition-colors shadow-sm",
+        "bg-white rounded-xl p-3 cursor-pointer border flex items-center gap-3 transition-colors shadow-sm relative group",
         person.received
           ? "border-emerald-200 bg-emerald-50/30"
           : "border-slate-100 hover:border-blue-300"
@@ -321,7 +372,7 @@ function CompactPersonCard({ person, onClick }: { person: Person; onClick: () =>
       </div>
 
       {/* Amount & Status */}
-      <div className="text-left shrink-0">
+      <div className="text-left shrink-0 flex items-center gap-2">
         <div
           className={cn(
             "px-2 py-1 rounded-md text-xs font-black",
@@ -332,6 +383,19 @@ function CompactPersonCard({ person, onClick }: { person: Person; onClick: () =>
         >
           {person.totalAmount.toLocaleString()} ر.ي
         </div>
+        
+        {person.received && onCancel && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancel();
+            }}
+            className="w-8 h-8 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center hover:bg-rose-200 transition-colors shadow-sm shrink-0"
+            title="إلغاء الصرف"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
     </motion.div>
   );
